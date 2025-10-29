@@ -4,8 +4,13 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 
 getgenv().__CH_DATA = getgenv().__CH_DATA or {
-    engines = {"HumanEngine", "Stockfish", "Lc0", "Torch", "Dx100", "KnightX", "HyperX", "Br1lliance", "Undefeated", "WurstEngine"},
-    config = {engine = "Stockfish", autoPlay = false, autoMatch = false, autoMatchMode = "Blitz"},
+    engines = {
+        "HumanEngine", "Stockfish", "Lc0", "Torch",
+        "Dx100", "KnightX", "HyperX", "Br1lliance",
+        "Undefeated", "WurstEngine",
+        "Axizion"
+    },
+    config = {engine = "Axizion", autoPlay = false, autoMatch = false, autoMatchMode = "Blitz"},
     recentPositions = {}
 }
 
@@ -165,6 +170,39 @@ local function isGameOver(fen)
 end
 
 local function queryWebEngine(fen, engine)
+    if engine == "Axizion" then
+        local parsed = parseFEN(fen)
+        if parsed.toMove == "white" and parsed.fullmove == 1 then
+            return "e2", "e4"
+        end
+        if parsed.toMove == "white" and parsed.fullmove == 2 then
+            if string.find(parsed.board, "4p3") then
+                return "d2", "d4"
+            end
+            if string.find(parsed.board, "4p3") then
+                return "b1", "c3"
+            end
+        end
+        if parsed.toMove == "white" and parsed.fullmove == 3 then
+            if string.find(parsed.board, "pppppppp") and string.find(parsed.board, "4P3") then
+                return "c2", "c3"
+            end
+        end
+        if parsed.toMove == "black" and parsed.fullmove == 1 then
+            if string.find(parsed.board, "4P3") then
+                local choice = math.random(1, 3)
+                if choice == 1 then
+                    return "c7", "c5"
+                elseif choice == 2 then
+                    return "e7", "e6"
+                else
+                    return "c7", "c6"
+                end
+            end
+        end
+        engine = "Stockfish"
+    end
+
     local body = {fen = fen}
     local isWurst = engine == "WurstEngine"
     local isHuman = engine == "HumanEngine"
@@ -179,6 +217,7 @@ local function queryWebEngine(fen, engine)
         body.depth = 16
         body.variants = 5
     end
+
     local attempts = 5
     local res
     for i = 1, attempts do
@@ -194,22 +233,25 @@ local function queryWebEngine(fen, engine)
         end
         task.wait(1 * i)
     end
+
     if not res or not res.Body then return nil end
     local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
     if not ok2 or not data then return nil end
+
     local recommendations = data.recommendations or {data}
     if #recommendations == 0 then return nil end
+
     local board = getBoardFromFEN(fen)
     table.insert(getgenv().__CH_DATA.recentPositions, board)
     if #getgenv().__CH_DATA.recentPositions > 4 then
         table.remove(getgenv().__CH_DATA.recentPositions, 1)
     end
+
     local count = 0
     for _, pos in ipairs(getgenv().__CH_DATA.recentPositions) do
-        if pos == board then
-            count = count + 1
-        end
+        if pos == board then count += 1 end
     end
+
     local validRecommendations = recommendations
     if count >= 2 then
         validRecommendations = {}
@@ -218,11 +260,11 @@ local function queryWebEngine(fen, engine)
                 table.insert(validRecommendations, rec)
             end
         end
-        if #validRecommendations == 0 then
-            validRecommendations = recommendations
-        end
+        if #validRecommendations == 0 then validRecommendations = recommendations end
     end
+
     local selected = validRecommendations[1]
+
     if isHuman then
         local parsed = parseFEN(fen)
         local rand = math.random()
@@ -234,39 +276,27 @@ local function queryWebEngine(fen, engine)
                 selected = validRecommendations[math.random(1, math.min(3, #validRecommendations))]
             end
         elseif isMiddlegamePhase(parsed) then
-            if rand < 0.8 then
-                selected = validRecommendations[1]
-            else
-                selected = validRecommendations[math.random(2, math.min(3, #validRecommendations))]
-            end
+            if rand < 0.8 then selected = validRecommendations[1]
+            else selected = validRecommendations[math.random(2, math.min(3, #validRecommendations))] end
             if rand < 0.3 then
                 for _, rec in ipairs(validRecommendations) do
-                    if rec.isCapture or rec.isCheck then
-                        selected = rec
-                        break
-                    end
+                    if rec.isCapture or rec.isCheck then selected = rec; break end
                 end
             end
         else
-            if rand < 0.9 then
-                selected = validRecommendations[1]
+            if rand < 0.9 then selected = validRecommendations[1]
             else
                 for _, rec in ipairs(validRecommendations) do
-                    if not rec.isCapture and not rec.isCheck then
-                        selected = rec
-                        break
-                    end
+                    if not rec.isCapture and not rec.isCheck then selected = rec; break end
                 end
             end
         end
     elseif isWurst then
         for _, rec in ipairs(validRecommendations) do
-            if rec.isCapture then
-                selected = rec
-                break
-            end
+            if rec.isCapture then selected = rec; break end
         end
     end
+
     if selected.from and selected.to then return selected.from, selected.to end
     return nil
 end
@@ -353,25 +383,24 @@ local function startAutoMatch()
             getgenv().__CH_DATA.recentPositions = {}
             local internalEvents = ReplicatedStorage:FindFirstChild("InternalClientEvents")
             if internalEvents then
-                local StartMatch = internalEvents:FindFirstChild("StartRankedMatch")
+                local StartMatch = internalEvents:FindFirstChild("StartRankedMatch") or internalEvents:FindFirstChild("StartMatch")
                 if StartMatch then
-                    StartMatch:Fire()
-                else
-                    StartMatch = internalEvents:FindFirstChild("StartMatch")
-                    if StartMatch then
-                        local player = Players.LocalPlayer
-                        local matchWizard = player:WaitForChild("PlayerGui"):FindFirstChild("MatchWizard")
-                        if matchWizard then
-                            local chooseMode = matchWizard:FindFirstChild("ChooseMode")
-                            if chooseMode then
-                                local isRated = chooseMode:FindFirstChild("IsRated")
-                                if isRated and isRated:IsA("BoolValue") then
-                                    isRated.Value = true
-                                end
+                    local player = Players.LocalPlayer
+                    local matchWizard = player:WaitForChild("PlayerGui"):FindFirstChild("MatchWizard")
+                    if matchWizard then
+                        local chooseMode = matchWizard:FindFirstChild("ChooseMode")
+                        if chooseMode then
+                            local isRated = chooseMode:FindFirstChild("IsRated")
+                            if isRated and isRated:IsA("BoolValue") then
+                                isRated.Value = true
+                            end
+                            local modeValue = chooseMode:FindFirstChild("Mode")
+                            if modeValue and modeValue:IsA("StringValue") then
+                                modeValue.Value = getgenv().__CH_DATA.config.autoMatchMode
                             end
                         end
-                        StartMatch:Fire({ranked = true})
                     end
+                    StartMatch:Fire({ranked = true})
                 end
             end
             repeat

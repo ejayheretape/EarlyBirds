@@ -9,8 +9,8 @@ local player = Players.LocalPlayer
 local userid = player.UserId
 
 getgenv().__CH_DATA = getgenv().__CH_DATA or {
-    engines = {"HumanEngine","Stockfish","Lc0","Torch","Dx100","KnightX","HyperX","Br1lliance","Undefeated","WurstEngine","Axizion"},
-    config = {engine = "Axizion", autoPlay = false, autoMatch = false, autoMatchMode = "Blitz"},
+    engines = {"HumanEngine","Stockfish","Lc0","Torch","Dx100","KnightX","HyperX","Br1lliance","Undefeated","WurstEngine","Axizion","Zxero"},
+    config = {engine = "Zxero", autoPlay = false, autoMatch = false, autoMatchMode = "Blitz"},
     recentPositions = {},
     winStreak = 0,
     totalGames = 0,
@@ -140,31 +140,6 @@ local function parseFEN(fen)
     return {toMove = toMove, halfmove = halfmove, fullmove = fullmove, pieceCount = pieceCount, board = board}
 end
 
-local function isOpeningPhase(p) return p.halfmove <= 4 and p.pieceCount >= 30 end
-local function isMiddlegamePhase(p) return p.halfmove > 4 and p.halfmove < 50 and p.pieceCount < 30 and p.pieceCount > 15 end
-local function isEndgamePhase(p) return p.halfmove >= 50 or p.pieceCount <= 15 end
-
-local function getCarlsenOpeningMove(fen, p, recs)
-    if not isOpeningPhase(p) then return end
-    local moves = {
-        e2e4 = {from="e2", to="e4"}, d2d4 = {from="d2", to="d4"}, g1f3 = {from="g1", to="f3"},
-        e7e5 = {from="e7", to="e5"}, c7c5 = {from="c7", to="c5"}, g8f6 = {from="g8", to="f6"}
-    }
-    local key
-    if p.toMove == "white" and p.fullmove == 1 then
-        key = math.random() < 0.6 and "e2e4" or "d2d4"
-    elseif p.toMove == "black" and p.board:find("4P3") then
-        key = math.random() < 0.5 and "e7e5" or "c7c5"
-    end
-    if key and moves[key] then
-        for _, r in ipairs(recs) do
-            if r.from == moves[key].from and r.to == moves[key].to then
-                return moves[key].from, moves[key].to
-            end
-        end
-    end
-end
-
 local function isGameOver(fen)
     if not fen or fen == "" then return true end
     local parts = {}
@@ -212,7 +187,73 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
+local Zxero_BOOK = {}
+local function loadZxeroBook()
+    if next(Zxero_BOOK) then return end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://explorer.lichess.org/api/cloud-eval/book"))
+    end)
+    if ok and data and data.moves then
+        for _,v in ipairs(data.moves) do
+            Zxero_BOOK[v.uci] = v
+        end
+    end
+end
+
 local function queryWebEngine(fen, engine)
+    if engine == "Zxero" then
+        local p = parseFEN(fen)
+        if p.fullmove <= 4 then
+            loadZxeroBook()
+            local lastUci = fen:match("^%S+ %S+ %S+ %S+ (%a%a%a%a)")
+            if lastUci and Zxero_BOOK[lastUci] then
+                return lastUci:sub(1,2), lastUci:sub(3,4)
+            end
+        end
+        local body = {fen = fen, depth = 42, variants = 17, multipv = true}
+        local res
+        for i = 1, 5 do
+            local ok, r = pcall(function()
+                return safeRequest({Url = "https://corsproxy.io/?https://chess-api.com/v1", Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(body)})
+            end)
+            if ok and r and r.Body then res = r break end
+            task.wait(i)
+        end
+        if not res or not res.Body then return end
+        local ok, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
+        if not ok or not data then return end
+        local recs = data.recommendations or {data}
+        if #recs == 0 then return end
+        local board = getBoardFromFEN(fen)
+        table.insert(getgenv().__CH_DATA.recentPositions, board)
+        if #getgenv().__CH_DATA.recentPositions > 4 then table.remove(getgenv().__CH_DATA.recentPositions, 1) end
+        local repeatCount = 0
+        for _, pos in ipairs(getgenv().__CH_DATA.recentPositions) do if pos == board then repeatCount += 1 end end
+        local valid = recs
+        if repeatCount >= 2 then
+            valid = {}
+            for _, r in ipairs(recs) do if r.isCapture or r.isCheck then table.insert(valid, r) end end
+            if #valid == 0 then valid = recs end
+        end
+        local best = valid[1]
+        for _, v in ipairs(valid) do
+            if v.mate then
+                best = v
+                break
+            elseif not best.mate and (v.eval or 0) > (best.eval or -99999) then
+                best = v
+            end
+        end
+        if math.random() < 0.3 then
+            for _, v in ipairs(valid) do
+                if v.isCapture and v.isCheck then
+                    best = v
+                    break
+                end
+            end
+        end
+        return best.from, best.to
+    end
     if engine == "Axizion" then
         local p = parseFEN(fen)
         if p.toMove == "white" and p.fullmove == 1 then return "e2", "e4" end
@@ -224,11 +265,9 @@ local function queryWebEngine(fen, engine)
         end
         engine = "Stockfish"
     end
-
     local body = {fen = fen, depth = 16, variants = 5}
     if engine == "WurstEngine" then body.depth = 18 end
     if engine == "HumanEngine" then body.depth = 12 body.variants = 3 end
-
     local res
     for i = 1, 5 do
         local ok, r = pcall(function()
@@ -238,36 +277,28 @@ local function queryWebEngine(fen, engine)
         task.wait(i)
     end
     if not res or not res.Body then return end
-
     local ok, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
     if not ok or not data then return end
-
     local recs = data.recommendations or {data}
     if #recs == 0 then return end
-
     local board = getBoardFromFEN(fen)
     table.insert(getgenv().__CH_DATA.recentPositions, board)
     if #getgenv().__CH_DATA.recentPositions > 4 then table.remove(getgenv().__CH_DATA.recentPositions, 1) end
-
     local repeatCount = 0
     for _, pos in ipairs(getgenv().__CH_DATA.recentPositions) do if pos == board then repeatCount += 1 end end
-
     local valid = recs
     if repeatCount >= 2 then
         valid = {}
         for _, r in ipairs(recs) do if r.isCapture or r.isCheck then table.insert(valid, r) end end
         if #valid == 0 then valid = recs end
     end
-
     local selected = valid[1]
     if engine == "HumanEngine" then
         local p = parseFEN(fen)
         local r = math.random()
-        if isOpeningPhase(p) then
-            local f,t = getCarlsenOpeningMove(fen, p, valid)
-            if f and t and r < 0.85 then return f,t end
+        if p.halfmove <= 4 and p.pieceCount >= 30 then
             selected = valid[math.random(1, math.min(3, #valid))]
-        elseif isMiddlegamePhase(p) then
+        elseif p.halfmove > 4 and p.halfmove < 50 and p.pieceCount < 30 and p.pieceCount > 15 then
             selected = r < 0.8 and valid[1] or valid[math.random(2, math.min(3, #valid))]
             if r < 0.3 then for _, v in ipairs(valid) do if v.isCapture or v.isCheck then selected = v break end end end
         else
@@ -276,7 +307,6 @@ local function queryWebEngine(fen, engine)
     elseif engine == "WurstEngine" then
         for _, v in ipairs(valid) do if v.isCapture then selected = v break end end
     end
-
     return selected.from, selected.to
 end
 

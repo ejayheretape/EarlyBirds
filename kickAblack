@@ -267,7 +267,7 @@ local function queryWebEngine(fen, engine)
     end
     local body = {fen = fen, depth = 16, variants = 5}
     if engine == "WurstEngine" then body.depth = 18 end
-    if engine == "HumanEngine" then body.depth = 12 body.variants = 3 end
+    if engine == "HumanEngine" then body.depth = 4 body.variants = 1 end
     local res
     for i = 1, 5 do
         local ok, r = pcall(function()

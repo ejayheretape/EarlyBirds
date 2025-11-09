@@ -14,7 +14,7 @@ local player = Players.LocalPlayer
 local userid = player.UserId
 
 local HWID_BLACKLIST = {
-    "nothing yet",
+    "0bd8319c-1e3e-44e8-b747-1fcd7aa67e83",
 }
 
 local function getHWID()

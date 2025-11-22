@@ -1,6 +1,77 @@
-print("Window Loading...")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+local pgui = player:WaitForChild("PlayerGui")
 
-wait(0.2)
+local LoadingScreen = Instance.new("ScreenGui")
+LoadingScreen.Name = "LunarLoading"
+LoadingScreen.ResetOnSpawn = false
+LoadingScreen.IgnoreGuiInset = true
+LoadingScreen.DisplayOrder = 999999999
+LoadingScreen.Parent = pgui
+
+local Background = Instance.new("Frame")
+Background.Size = UDim2.new(1,0,1,0)
+Background.BackgroundColor3 = Color3.fromRGB(0,0,0)
+Background.BorderSizePixel = 0
+Background.Parent = LoadingScreen
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(0.9,0,0.2,0)
+Title.Position = UDim2.new(0.5,0,0.44,0)
+Title.AnchorPoint = Vector2.new(0.5,0.5)
+Title.BackgroundTransparency = 1
+Title.Text = "LunarScriptz"
+Title.Font = Enum.Font.GothamBlack
+Title.TextScaled = true
+Title.TextTransparency = 1
+Title.TextStrokeTransparency = 0.8
+Title.TextStrokeColor3 = Color3.fromRGB(140,0,255)
+Title.Parent = Background
+
+local TitleGradient = Instance.new("UIGradient")
+TitleGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(160,0,255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200,100,255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255,255,255))
+}
+TitleGradient.Rotation = 45
+TitleGradient.Parent = Title
+
+local Credit = Instance.new("TextLabel")
+Credit.Size = UDim2.new(0.7,0,0.08,0)
+Credit.Position = UDim2.new(0.5,0,0.56,0)
+Credit.AnchorPoint = Vector2.new(0.5,0.5)
+Credit.BackgroundTransparency = 1
+Credit.Text = "made by jayz & cypher"
+Credit.Font = Enum.Font.Code
+Credit.TextScaled = true
+Credit.TextTransparency = 1
+Credit.Parent = Background
+
+local CreditGradient = Instance.new("UIGradient")
+CreditGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(170,0,255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(220,120,255))
+}
+CreditGradient.Rotation = 45
+CreditGradient.Parent = Credit
+
+TweenService:Create(Background, TweenInfo.new(1.2), {BackgroundTransparency = 0}):Play()
+TweenService:Create(Title, TweenInfo.new(1.8), {TextTransparency = 0}):Play()
+TweenService:Create(Credit, TweenInfo.new(2.2), {TextTransparency = 0}):Play()
+
+task.wait(2.8)
+
+local fadeOut = TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+TweenService:Create(Background, fadeOut, {BackgroundTransparency = 1}):Play()
+TweenService:Create(Title, fadeOut, {TextTransparency = 1}):Play()
+TweenService:Create(Credit, fadeOut, {TextTransparency = 1}):Play()
+
+task.wait(5.1)
+LoadingScreen:Destroy()
+
+task.wait(0.2)
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,7 +85,7 @@ local player = Players.LocalPlayer
 local userid = player.UserId
 
 local HWID_BLACKLIST = {
-    "0bd8319c-1e3e-44e8-b747-1fcd7aa67e83",
+    "nothing yet",
 }
 
 local function getHWID()

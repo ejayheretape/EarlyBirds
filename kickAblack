@@ -4,10 +4,33 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local Stats = game:GetService("Stats")
+local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
 local pgui = player:WaitForChild("PlayerGui")
+
+local CONFIG_FILE = "LunarChess_Config.json"
+
+local function loadConfig()
+    if isfile and readfile and isfile(CONFIG_FILE) then
+        local success, data = pcall(function()
+            return HttpService:JSONDecode(readfile(CONFIG_FILE))
+        end)
+        if success and type(data) == "table" then
+            return data
+        end
+    end
+    return { engine = "Blatant", autoPlay = false, autoMatch = false, autoMatchMode = "Blitz", moveDelay = 0 }
+end
+
+local function saveConfig()
+    if writefile then
+        pcall(function()
+            writefile(CONFIG_FILE, HttpService:JSONEncode(getgenv().__CH_DATA.config))
+        end)
+    end
+end
 
 if Lighting:FindFirstChild("Atmosphere") then Lighting.Atmosphere:Destroy() end
 if Lighting:FindFirstChild("Sky") then Lighting.Sky:Destroy() end
@@ -40,9 +63,19 @@ Lighting.GlobalShadows = false
 Lighting.Ambient = Color3.fromRGB(100,70,160)
 Lighting.OutdoorAmbient = Color3.fromRGB(90,60,150)
 
-Instance.new("BloomEffect", Lighting).Intensity = 0.8; Instance.new("BloomEffect", Lighting).Threshold = 0.9; Instance.new("BloomEffect", Lighting).Size = 48
-Instance.new("ColorCorrectionEffect", Lighting).Saturation = 0.5; Instance.new("ColorCorrectionEffect", Lighting).Contrast = 0.3; Instance.new("ColorCorrectionEffect", Lighting).TintColor = Color3.fromRGB(200,120,255)
-Instance.new("SunRaysEffect", Lighting).Intensity = 0.2; Instance.new("SunRaysEffect", Lighting).Spread = 0.7
+local bloom = Instance.new("BloomEffect", Lighting)
+bloom.Intensity = 0.8
+bloom.Threshold = 0.9
+bloom.Size = 48
+
+local color = Instance.new("ColorCorrectionEffect", Lighting)
+color.Saturation = 0.5
+color.Contrast = 0.3
+color.TintColor = Color3.fromRGB(200,120,255)
+
+local sunrays = Instance.new("SunRaysEffect", Lighting)
+sunrays.Intensity = 0.2
+sunrays.Spread = 0.7
 
 local LoadingScreen = Instance.new("ScreenGui", pgui)
 LoadingScreen.Name = "LunarLoading"
@@ -67,7 +100,11 @@ Title.TextStrokeTransparency = 0.8
 Title.TextStrokeColor3 = Color3.fromRGB(140,0,255)
 
 local TitleGradient = Instance.new("UIGradient", Title)
-TitleGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(160,0,255)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200,100,255)), ColorSequenceKeypoint.new(1, Color3.new(1,1,1))}
+TitleGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(160,0,255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200,100,255)),
+    ColorSequenceKeypoint.new(1, Color3.new(1,1,1))
+}
 TitleGradient.Rotation = 45
 
 local Credit = Instance.new("TextLabel", Background)
@@ -81,7 +118,10 @@ Credit.TextScaled = true
 Credit.TextTransparency = 1
 
 local CreditGradient = Instance.new("UIGradient", Credit)
-CreditGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(170,0,255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(220,120,255))}
+CreditGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(170,0,255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(220,120,255))
+}
 CreditGradient.Rotation = 45
 
 TweenService:Create(Background, TweenInfo.new(1.2), {BackgroundTransparency = 0}):Play()
@@ -192,7 +232,7 @@ delayBox.BackgroundColor3 = Color3.fromRGB(30,35,50)
 local playBtn = Instance.new("TextButton", frame)
 playBtn.Size = UDim2.new(1,-20,0,32)
 playBtn.Position = UDim2.new(0,10,0,196)
-playBtn.Text = "Play Best Move"
+playBtn.Text = "Play A Move"
 playBtn.TextColor3 = Color3.new(1,1,1)
 playBtn.Font = Enum.Font.GothamBold
 playBtn.TextScaled = true
@@ -225,17 +265,20 @@ analyzerBtn.Font = Enum.Font.GothamBold
 analyzerBtn.TextScaled = true
 analyzerBtn.BackgroundColor3 = Color3.fromRGB(30,35,50)
 
-local toggle = Instance.new("TextButton", gui)
-toggle.Size = UDim2.new(0,36,0,36)
-toggle.Position = UDim2.new(1,6,0,-6)
-toggle.Text = "X"
-toggle.BackgroundColor3 = Color3.fromRGB(220,20,60)
-toggle.TextColor3 = Color3.new(1,1,1)
-toggle.Font = Enum.Font.GothamBold
-toggle.TextScaled = true
+local leftToggle = Instance.new("TextButton", gui)
+leftToggle.Size = UDim2.new(0,36,0,36)
+leftToggle.Position = UDim2.new(0,10,0,50)
+leftToggle.Text = "L"
+leftToggle.Font = Enum.Font.Arcade
+leftToggle.TextScaled = true
+leftToggle.BackgroundColor3 = Color3.fromRGB(0,0,0)
+leftToggle.TextColor3 = Color3.fromRGB(255,255,255)
+
+local leftStroke = Instance.new("UIStroke", leftToggle)
+leftStroke.Color = Color3.fromRGB(140,0,255)
+leftStroke.Thickness = 2
 
 local gradients = {}
-
 local function addGradient(obj)
     local g = Instance.new("UIGradient", obj)
     g.Color = ColorSequence.new{
@@ -253,7 +296,7 @@ end
 
 addGradient(frame)
 addStroke(frame, 2.2)
-addStroke(toggle, 1.5)
+addStroke(leftToggle, 2)
 
 for _, v in {engDrop, modeDrop, delayBox, playBtn, autoPlayBtn, autoMatchBtn, analyzerBtn} do
     addGradient(v)
@@ -270,45 +313,47 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
-local function updateToggle()
-    toggle.Position = UDim2.fromOffset(frame.AbsolutePosition.X + frame.AbsoluteSize.X - 30, frame.AbsolutePosition.Y - 36)
-end
-RunService.Heartbeat:Connect(updateToggle)
-updateToggle()
-
 local open = true
-toggle.MouseButton1Click:Connect(function()
+leftToggle.MouseButton1Click:Connect(function()
     open = not open
     frame.Visible = open
-    toggle.Text = open and "X" or "Open"
 end)
 
 getgenv().__CH_DATA = getgenv().__CH_DATA or {
     engines = {"Blatant","HumanEngine","Stockfish","Lc0","Torch","Dx100","KnightX","HyperX","Br1lliance","Undefeated","WurstEngine","Axizion","Zxero"},
-    config = {engine = "Blatant", autoPlay = false, autoMatch = false, autoMatchMode = "Blitz", moveDelay = 0},
+    config = loadConfig(),
     recentPositions = {}
 }
 
 local ENGINES = {
-    Blatant = {depth=2,  variants=1,  elo=1900},
-    HumanEngine = {depth=4,  variants=1,  elo=2430},
-    Stockfish = {depth=22, variants=5,  elo=3550},
-    Lc0 = {depth=18, variants=5,  elo=3150},
-    Torch = {depth=20, variants=5,  elo=3400},
-    Dx100 = {depth=24, variants=4,  elo=3750},
-    KnightX = {depth=26, variants=8,  elo=4050},
-    HyperX = {depth=28, variants=7,  elo=4250},
+    Blatant = {depth=2, variants=1, elo=1900},
+    HumanEngine = {depth=4, variants=1, elo=2430},
+    Stockfish = {depth=22, variants=5, elo=3550},
+    Lc0 = {depth=18, variants=5, elo=3150},
+    Torch = {depth=20, variants=5, elo=3400},
+    Dx100 = {depth=24, variants=4, elo=3750},
+    KnightX = {depth=26, variants=8, elo=4050},
+    HyperX = {depth=28, variants=7, elo=4250},
     Br1lliance = {depth=30, variants=12, elo=5220},
     Undefeated = {depth=32, variants=14, elo=6850},
-    WurstEngine = {depth=34, variants=8,  elo=6855},
-    Axizion = {depth=36, variants=9,  elo=6880},
+    WurstEngine = {depth=34, variants=8, elo=6855},
+    Axizion = {depth=36, variants=9, elo=6880},
     Zxero = {depth=42, variants=12, elo=7300}
 }
+
+engDrop.Text = getgenv().__CH_DATA.config.engine
+modeDrop.Text = getgenv().__CH_DATA.config.autoMatchMode
+delayBox.Text = tostring(getgenv().__CH_DATA.config.moveDelay)
+delayLabel.Text = "Move Delay: " .. getgenv().__CH_DATA.config.moveDelay .. "s"
+autoPlayBtn.Text = "Auto Play: " .. (getgenv().__CH_DATA.config.autoPlay and "ON" or "OFF")
+autoPlayBtn.BackgroundColor3 = getgenv().__CH_DATA.config.autoPlay and Color3.fromRGB(0,140,0) or Color3.fromRGB(30,35,50)
+autoMatchBtn.Text = "Auto Match: " .. (getgenv().__CH_DATA.config.autoMatch and "ON" or "OFF")
+autoMatchBtn.BackgroundColor3 = getgenv().__CH_DATA.config.autoMatch and Color3.fromRGB(0,140,0) or Color3.fromRGB(30,35,50)
 
 for _, engine in getgenv().__CH_DATA.engines do
     local btn = Instance.new("TextButton", engFrame)
     btn.Size = UDim2.new(1,0,0,22)
-    btn.Text = engine.." ("..ENGINES[engine].elo.." ELO)"
+    btn.Text = engine .. " (" .. ENGINES[engine].elo .. " ELO)"
     btn.BackgroundColor3 = Color3.fromRGB(25,30,45)
     btn.TextColor3 = Color3.new(1,1,1)
     btn.Font = Enum.Font.Gotham
@@ -319,6 +364,7 @@ for _, engine in getgenv().__CH_DATA.engines do
         getgenv().__CH_DATA.config.engine = engine
         engDrop.Text = engine
         engFrame:TweenSize(UDim2.new(1,-20,0,0), "Out", "Quad", 0.2, true)
+        saveConfig()
     end)
 end
 
@@ -342,6 +388,7 @@ for _, mode in modes do
         getgenv().__CH_DATA.config.autoMatchMode = mode
         modeDrop.Text = mode
         modeFrame:TweenSize(UDim2.new(1,-20,0,0), "Out", "Quad", 0.2, true)
+        saveConfig()
     end)
 end
 
@@ -355,7 +402,9 @@ delayBox.FocusLost:Connect(function(enter)
         local num = tonumber(delayBox.Text)
         if num and num >= 0 then
             getgenv().__CH_DATA.config.moveDelay = num
-            delayLabel.Text = "Move Delay: "..num.."s"
+            delayLabel.Text = "Move Delay: " .. num .. "s"
+            delayBox.Text = tostring(num)
+            saveConfig()
         else
             delayBox.Text = tostring(getgenv().__CH_DATA.config.moveDelay)
         end
@@ -364,11 +413,7 @@ end)
 
 local function queryEngine(fen, engine)
     local cfg = ENGINES[engine] or ENGINES.Stockfish
-    local body = HttpService:JSONEncode({
-        fen = fen,
-        depth = math.min(cfg.depth, 18),
-        variants = math.min(cfg.variants, 5)
-    })
+    local body = HttpService:JSONEncode({fen = fen, depth = math.min(cfg.depth, 18), variants = math.min(cfg.variants, 5)})
     local req = syn and syn.request or request or http_request or http.request
     local res
 
@@ -451,12 +496,14 @@ playBtn.MouseButton1Click:Connect(playMove)
 local autoPlayRunning = false
 autoPlayBtn.MouseButton1Click:Connect(function()
     getgenv().__CH_DATA.config.autoPlay = not getgenv().__CH_DATA.config.autoPlay
-    autoPlayBtn.Text = "Auto Play: "..(getgenv().__CH_DATA.config.autoPlay and "ON" or "OFF")
+    autoPlayBtn.Text = "Auto Play: " .. (getgenv().__CH_DATA.config.autoPlay and "ON" or "OFF")
     autoPlayBtn.BackgroundColor3 = getgenv().__CH_DATA.config.autoPlay and Color3.fromRGB(0,140,0) or Color3.fromRGB(30,35,50)
+    saveConfig()
+
     if getgenv().__CH_DATA.config.autoPlay and not autoPlayRunning then
         autoPlayRunning = true
         task.spawn(function()
-            while getgenv().__CH_DATA.config.autoPlay and autoPlayRunning do
+            while getgenv().__CH_DATA.config.autoPlay do
                 if fetchFEN() then
                     playMove()
                     task.wait(getgenv().__CH_DATA.config.moveDelay)
@@ -474,12 +521,14 @@ end)
 local autoMatchRunning = false
 autoMatchBtn.MouseButton1Click:Connect(function()
     getgenv().__CH_DATA.config.autoMatch = not getgenv().__CH_DATA.config.autoMatch
-    autoMatchBtn.Text = "Auto Match: "..(getgenv().__CH_DATA.config.autoMatch and "ON" or "OFF")
+    autoMatchBtn.Text = "Auto Match: " .. (getgenv().__CH_DATA.config.autoMatch and "ON" or "OFF")
     autoMatchBtn.BackgroundColor3 = getgenv().__CH_DATA.config.autoMatch and Color3.fromRGB(0,140,0) or Color3.fromRGB(30,35,50)
+    saveConfig()
+
     if getgenv().__CH_DATA.config.autoMatch and not autoMatchRunning then
         autoMatchRunning = true
         task.spawn(function()
-            while getgenv().__CH_DATA.config.autoMatch and autoMatchRunning do
+            while getgenv().__CH_DATA.config.autoMatch do
                 if not fetchFEN() then
                     local ev = ReplicatedStorage:FindFirstChild("InternalClientEvents")
                     if ev then
@@ -487,10 +536,10 @@ autoMatchBtn.MouseButton1Click:Connect(function()
                         if start then
                             local wiz = pgui:FindFirstChild("MatchWizard")
                             if wiz then
-                                local mode = wiz:FindFirstChild("ChooseMode")
-                                if mode then
-                                    if mode:FindFirstChild("IsRated") then mode.IsRated.Value = true end
-                                    if mode:FindFirstChild("Mode") then mode.Mode.Value = getgenv().__CH_DATA.config.autoMatchMode end
+                                local choose = wiz:FindFirstChild("ChooseMode")
+                                if choose then
+                                    if choose:FindFirstChild("IsRated") then choose.IsRated.Value = true end
+                                    if choose:FindFirstChild("Mode") then choose.Mode.Value = getgenv().__CH_DATA.config.autoMatchMode end
                                 end
                             end
                             pcall(start.Fire, start, {ranked = true})
@@ -523,4 +572,60 @@ analyzerBtn.MouseButton1Click:Connect(function()
         analyzerBtn.BackgroundColor3 = Color3.fromRGB(30,35,50)
         analyzing = false
     end)
+end)
+
+local fpsGui = Instance.new("ScreenGui")
+fpsGui.Name = "FPSpingUI"
+fpsGui.ResetOnSpawn = false
+fpsGui.Parent = CoreGui
+
+local fpsFrame = Instance.new("Frame")
+fpsFrame.Size = UDim2.new(0, 100, 0, 45)
+fpsFrame.Position = UDim2.new(1, -110, 0, 10)
+fpsFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+fpsFrame.BackgroundTransparency = 0.15
+fpsFrame.Active = true
+fpsFrame.Draggable = true
+fpsFrame.Parent = fpsGui
+
+Instance.new("UICorner", fpsFrame)
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(170, 0, 255)
+stroke.Parent = fpsFrame
+
+local fpsText = Instance.new("TextLabel")
+fpsText.Size = UDim2.new(1, 0, 0.5, 0)
+fpsText.BackgroundTransparency = 1
+fpsText.Text = "FPS: ..."
+fpsText.Font = Enum.Font.GothamBold
+fpsText.TextSize = 14
+fpsText.TextColor3 = Color3.fromRGB(255, 255, 255)
+fpsText.Parent = fpsFrame
+
+local pingText = Instance.new("TextLabel")
+pingText.Size = UDim2.new(1, 0, 0.5, 0)
+pingText.Position = UDim2.new(0, 0, 0.5, 0)
+pingText.BackgroundTransparency = 1
+pingText.Text = "Ping: ..."
+pingText.Font = Enum.Font.GothamBold
+pingText.TextSize = 14
+pingText.TextColor3 = Color3.fromRGB(255, 255, 255)
+pingText.Parent = fpsFrame
+
+local last = tick()
+local frames = 0
+
+RunService.RenderStepped:Connect(function()
+    frames += 1
+    local now = tick()
+    if now - last >= 1 then
+        fpsText.Text = "FPS: " .. frames
+        frames = 0
+        last = now
+    end
+
+    local ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+    pingText.Text = "Ping: " .. math.floor(ping) .. "ms"
 end)
